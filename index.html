@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Run & Catch – Extended Q-Learning (Made by GeFA)</title>
+
+  <!-- Brython for Python in the browser -->
+  <script src="https://cdn.jsdelivr.net/npm/brython@3.11.2/brython.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/brython@3.11.2/brython_stdlib.js"></script>
+
+  <!-- Chart.js for the Win-Rate chart -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* Basic reset */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, #222 0%, #444 100%);
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    h1 {
+      margin: 20px;
+      text-align: center;
+      color: #ffeb3b;
+      text-shadow: 2px 2px 4px #000;
+    }
+
+    /* The game canvas */
+    #gameCanvas {
+      background-color: #2b2b2b;
+      border: 3px solid #555;
+      display: block;
+      margin: 0 auto 20px auto;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    }
+
+    /* Container for the HUD panels */
+    #hud-container {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: center;
+      width: 90%;
+      max-width: 1100px;
+      margin-bottom: 20px;
+    }
+
+    .hud-panel {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid #666;
+      border-radius: 6px;
+      padding: 15px;
+      min-width: 160px;
+      text-align: center;
+      box-shadow: inset 0 0 6px rgba(0,0,0,0.6);
+    }
+
+    .hud-panel h2 {
+      margin-bottom: 8px;
+      font-size: 18px;
+      color: #ffeb3b;
+      text-shadow: 1px 1px 2px #000;
+    }
+
+    .hud-panel p {
+      margin: 6px 0;
+      font-size: 15px;
+    }
+
+    .highlight {
+      color: #0f0;
+      font-weight: bold;
+    }
+
+    /* Buttons container */
+    #controls {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      margin-bottom: 30px;
+    }
+
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      background: #666;
+      color: #eee;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background 0.3s, transform 0.2s;
+    }
+
+    button:hover {
+      background: #777;
+      transform: translateY(-2px);
+    }
+
+    /* Container for the win-rate chart */
+    #winRateContainer {
+      width: 400px;
+      max-width: 90%;
+      margin: 20px auto 30px auto;
+    }
+
+    #winRateChart {
+      background: #333;
+      border: 2px solid #555;
+      border-radius: 4px;
+    }
+
+    footer {
+      margin-top: auto;
+      padding: 10px;
+      text-align: center;
+      font-size: 14px;
+      color: #bbb;
+      background: #222;
+      width: 100%;
+      box-shadow: 0 -2px 5px rgba(0,0,0,0.5);
+    }
+
+    footer a {
+      color: #ffeb3b;
+      text-decoration: none;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body onload="brython()">
+
+  <h1>Run & Catch – Extended Q-Learning (Made by GeFA)</h1>
+
+  <!-- The game canvas -->
+  <canvas id="gameCanvas" width="600" height="600"></canvas>
+
+  <!-- HUD Panels -->
+  <div id="hud-container">
+    <!-- Time Panel -->
+    <div class="hud-panel">
+      <h2>Time</h2>
+      <p>Remaining: <span id="timeLeftVal" class="highlight">30</span> s</p>
+    </div>
+
+    <!-- Runners Panel -->
+    <div class="hud-panel">
+      <h2>Runners</h2>
+      <p>Caught: <span id="runnersCaughtVal" class="highlight">0</span> / 2</p>
+      <p id="runnerStrategy">Action: –</p>
+    </div>
+
+    <!-- Chasers Panel -->
+    <div class="hud-panel">
+      <h2>Chasers</h2>
+      <p id="chaserStrategy">Action: –</p>
+    </div>
+
+    <!-- Game Status & Episodes Panel -->
+    <div class="hud-panel">
+      <h2>Game Status</h2>
+      <p id="gameStatusText">Waiting...</p>
+      <p>Episodes: <span id="episodeCountVal" class="highlight">1</span></p>
+    </div>
+
+    <!-- Statistics Panel -->
+    <div class="hud-panel">
+      <h2>Statistics</h2>
+      <p>Runners Wins: <span id="runnersWinsVal" class="highlight">0</span></p>
+      <p>Chasers Wins: <span id="chasersWinsVal" class="highlight">0</span></p>
+      <p>Runners Win-Rate: <span id="runnersWinRateVal" class="highlight">0</span>%</p>
+    </div>
+  </div>
+
+  <!-- Buttons -->
+  <div id="controls">
+    <button id="btn-start">Start</button>
+    <button id="btn-stop">Stop</button>
+  </div>
+
+  <!-- Chart for Win-Rate -->
+  <div id="winRateContainer">
+    <canvas id="winRateChart" width="400" height="200"></canvas>
+  </div>
+
+  <footer>
+    <p>Made by <a href="#">GeFA</a> – Have fun!</p>
+  </footer>
+
+  <!-- Brython code (Q-Learning + Game Logic) -->
+  <script type="text/python">
+############################################################
+# Python / Brython Code – Run & Catch with Q-Learning
+# Now with model saving in localStorage
+############################################################
+
+from browser import document, timer, window
+import math, random, json
+
+# ----------- References to HTML elements -----------
+canvas              = document["gameCanvas"]
+ctx                 = canvas.getContext("2d")
+
+timeLeftVal         = document["timeLeftVal"]
+runnersCaughtVal    = document["runnersCaughtVal"]
+runnerStrategyLbl   = document["runnerStrategy"]
+chaserStrategyLbl   = document["chaserStrategy"]
+gameStatusText      = document["gameStatusText"]
+episodeCountVal     = document["episodeCountVal"]
+runnersWinsVal      = document["runnersWinsVal"]
+chasersWinsVal      = document["chasersWinsVal"]
+runnersWinRateVal   = document["runnersWinRateVal"]
+
+BTN_START           = document["btn-start"]
+BTN_STOP            = document["btn-stop"]
+
+# Chart objects from JavaScript
+winRateChart        = window.winRateChart
+addEpisodeWinRate   = window.addEpisodeWinRate
+
+# ----------- Game & Q-Learning Settings -----------
+GRID_SIZE           = 6
+CELL_SIZE           = 100
+BOARD_W             = GRID_SIZE * CELL_SIZE
+BOARD_H             = GRID_SIZE * CELL_SIZE
+
+TOTAL_TIME          = 30
+time_left           = TOTAL_TIME
+game_running        = False
+caught_count        = 0
+episode_count       = 1
+
+AUTO_RESTART        = True
+EPISODE_DELAY_MS    = 1000  # 1s delay before next episode
+
+# Q-Learning parameters
+ALPHA               = 0.2
+GAMMA               = 0.9
+EPSILON             = 0.2
+
+# Statistics
+runners_wins        = 0
+chasers_wins        = 0
+
+game_interval_id    = None
+timer_interval_id   = None
+restart_timeout_id  = None
+
+# Single moves: 7 actions => (dr, dc, name)
+SINGLE_MOVES = [
+    (-1, 0, "UP"),
+    ( 1, 0, "DOWN"),
+    ( 0,-1, "LEFT"),
+    ( 0, 1, "RIGHT"),
+    ( 0, 0, "STAY"),
+    ( 0, 0, "ATTACK"),
+    ( 0, 0, "SPECIAL")
+]
+NUM_SINGLE_ACTIONS = len(SINGLE_MOVES)
+
+# For 2 units => 49 combined actions
+TEAM_ACTIONS = []
+for i in range(NUM_SINGLE_ACTIONS):
+    for j in range(NUM_SINGLE_ACTIONS):
+        TEAM_ACTIONS.append((i,j))
+
+# ---------- Data structures for Runners and Chasers ------------
+runners_data = {
+    "units": [
+        {"row":0, "col":0, "caught":False},
+        {"row":0, "col":1, "caught":False}
+    ],
+    "Q": {},  # We will load/store from localStorage
+    "name": "runners"
+}
+
+chasers_data = {
+    "units": [
+        {"row": GRID_SIZE-1, "col": GRID_SIZE-1},
+        {"row": GRID_SIZE-1, "col": GRID_SIZE-2}
+    ],
+    "Q": {},  # We will load/store from localStorage
+    "name": "chasers"
+}
+
+# ---------- LocalStorage: load/save Q tables -----------
+def load_q_table(key):
+    """Load a Q-table from localStorage (if any)."""
+    if key in window.localStorage:
+        try:
+            data_str = window.localStorage[key]
+            return json.loads(data_str)
+        except:
+            return {}
+    else:
+        return {}
+
+def save_q_table(key, q_table):
+    """Save a Q-table to localStorage."""
+    data_str = json.dumps(q_table)
+    window.localStorage[key] = data_str
+
+def load_all_q_tables():
+    runners_data["Q"]  = load_q_table("RunnersQ")
+    chasers_data["Q"]  = load_q_table("ChasersQ")
+
+def save_all_q_tables():
+    save_q_table("RunnersQ", runners_data["Q"])
+    save_q_table("ChasersQ", chasers_data["Q"])
+
+# ---------- Q-Learning helpers ----------
+def in_bounds(r, c):
+    return 0 <= r < GRID_SIZE and 0 <= c < GRID_SIZE
+
+def manhattan_dist(r1, c1, r2, c2):
+    return abs(r1 - r2) + abs(c1 - c2)
+
+def get_state(rdata, cdata):
+    """State includes positions (and 'caught' for runners)."""
+    r1 = (rdata["units"][0]["row"], rdata["units"][0]["col"], rdata["units"][0]["caught"])
+    r2 = (rdata["units"][1]["row"], rdata["units"][1]["col"], rdata["units"][1]["caught"])
+    c1 = (cdata["units"][0]["row"], cdata["units"][0]["col"])
+    c2 = (cdata["units"][1]["row"], cdata["units"][1]["col"])
+    return (r1, r2, c1, c2)
+
+def get_q(q_table, state, action):
+    return q_table.get((state, action), 0.0)
+
+def set_q(q_table, state, action, val):
+    q_table[(state, action)] = val
+
+def best_action(q_table, state):
+    best_q = None
+    best_acts = []
+    for a in TEAM_ACTIONS:
+        val = get_q(q_table, state, a)
+        if best_q is None or val > best_q:
+            best_q = val
+            best_acts = [a]
+        elif math.isclose(val, best_q):
+            best_acts.append(a)
+    if best_q is None:
+        return (random.choice(TEAM_ACTIONS), 0.0)
+    else:
+        return (random.choice(best_acts), best_q)
+
+def choose_action(team_data, opp_data):
+    st = get_state(runners_data, chasers_data)
+    q_table = team_data["Q"]
+    if random.random() < EPSILON:
+        act = random.choice(TEAM_ACTIONS)
+        reason = "Random (Exploration)"
+        q_val  = None
+    else:
+        (act, best_q) = best_action(q_table, st)
+        reason = f"Q={round(best_q,2)} (Exploitation)"
+        q_val  = best_q
+    return (st, act, reason, q_val)
+
+def update_q(q_table, old_state, action, reward, new_state):
+    old_q = get_q(q_table, old_state, action)
+    # max future
+    max_fut = None
+    for a2 in TEAM_ACTIONS:
+        val = get_q(q_table, new_state, a2)
+        if max_fut is None or val > max_fut:
+            max_fut = val
+    if max_fut is None:
+        max_fut = 0.0
+    new_q = old_q + ALPHA * (reward + GAMMA*max_fut - old_q)
+    set_q(q_table, old_state, action, new_q)
+
+# ---------- Apply actions ----------
+def clamp_position(r, c, old_r, old_c):
+    if not in_bounds(r, c):
+        return (old_r, old_c)
+    return (r, c)
+
+def apply_action(team_data, action):
+    """
+    For each unit, get the single action from the combined action tuple.
+    If runner is caught, it doesn't move.
+    If action is 'ATTACK' or 'SPECIAL', we do not move the unit, but it can have other effects.
+    """
+    results = []
+    for idx, act_idx in enumerate(action):
+        unit = team_data["units"][idx]
+        # Runners who are caught don't move
+        if team_data["name"] == "runners" and unit.get("caught", False):
+            results.append((unit["row"], unit["col"], "caught"))
+            continue
+        (dr, dc, name) = SINGLE_MOVES[act_idx]
+        old_r, old_c   = unit["row"], unit["col"]
+        nr, nc         = old_r, old_c
+        if name not in ("ATTACK","SPECIAL"):
+            nr, nc = clamp_position(old_r + dr, old_c + dc, old_r, old_c)
+        unit["row"], unit["col"] = nr, nc
+        results.append((nr, nc, name))
+    return results
+
+# ---------- Catch check ----------
+def check_catches():
+    global caught_count
+    newly_caught = 0
+    for r in runners_data["units"]:
+        if r["caught"]:
+            continue
+        for c in chasers_data["units"]:
+            if r["row"] == c["row"] and r["col"] == c["col"]:
+                r["caught"] = True
+                caught_count += 1
+                newly_caught += 1
+                break
+    runnersCaughtVal.text = str(caught_count)
+    return newly_caught
+
+# ---------- Distance-based rewards ----------
+def measure_runners_distances():
+    # store (row, col, caught, [distToChaser1, distToChaser2])
+    out = []
+    for r in runners_data["units"]:
+        dist_list = []
+        for ch in chasers_data["units"]:
+            dist_list.append(manhattan_dist(r["row"], r["col"], ch["row"], ch["col"]))
+        out.append( (r["row"], r["col"], r["caught"], dist_list) )
+    return out
+
+def measure_chasers_distances():
+    # store (row, col, [distToRunner1, distToRunner2])
+    out = []
+    for c in chasers_data["units"]:
+        dist_list = []
+        for r in runners_data["units"]:
+            dist_list.append(manhattan_dist(c["row"], c["col"], r["row"], r["col"]))
+        out.append( (c["row"], c["col"], dist_list) )
+    return out
+
+def get_runners_positions():
+    return [ (r["row"], r["col"], r["caught"]) for r in runners_data["units"] ]
+
+def get_chasers_positions():
+    return [ (c["row"], c["col"]) for c in chasers_data["units"] ]
+
+def reward_runners_distance(before_info, new_chaser_positions):
+    """
+    If a runner is free, +0.02 if distance to chaser increased, -0.02 if decreased.
+    """
+    reward = 0.0
+    for idx, (rrow, rcol, was_caught, dists) in enumerate(before_info):
+        if was_caught:
+            continue
+        for i, old_dist in enumerate(dists):
+            chr, chc = new_chaser_positions[i]
+            new_dist = manhattan_dist(rrow, rcol, chr, chc)
+            if new_dist>old_dist:
+                reward += 0.02
+            elif new_dist<old_dist:
+                reward -= 0.02
+    return reward
+
+def reward_chasers_distance(before_info, new_runner_positions):
+    """
+    For each chaser, +0.02 if distance to free runner is smaller, -0.02 if bigger.
+    """
+    reward = 0.0
+    for idx, (crow, ccol, dists) in enumerate(before_info):
+        for i, old_dist in enumerate(dists):
+            rr, rc, rcaught = new_runner_positions[i]
+            if rcaught:
+                continue
+            new_dist = manhattan_dist(crow, ccol, rr, rc)
+            if new_dist<old_dist:
+                reward += 0.02
+            elif new_dist>old_dist:
+                reward -= 0.02
+    return reward
+
+def reward_attack_special(team_name, action_results, opponent_positions):
+    """
+    Minimal example:
+      - ATTACK => +0.1 if an opponent is in the same or adjacent cell
+      - SPECIAL => +0.05
+    """
+    r = 0.0
+    for (nr, nc, aname) in action_results:
+        if aname=="ATTACK":
+            # check if any opponent is in distance <= 1
+            for opp in opponent_positions:
+                if len(opp)==3:
+                    # runner: (rrow, rcol, rcaught)
+                    orow, ocol, ocaught = opp
+                    if ocaught:
+                        continue
+                else:
+                    # chaser: (crow, ccol)
+                    orow, ocol = opp
+                if abs(orow-nr)<=1 and abs(ocol-nc)<=1:
+                    r += 0.1
+        elif aname=="SPECIAL":
+            r += 0.05
+    return r
+
+def compute_runner_reward(r_before, newly_caught, r_action_res, new_c_positions):
+    reward = 0.0
+    # distance-based
+    reward += reward_runners_distance(r_before, new_c_positions)
+    # if newly caught => -5 for each runner caught
+    reward -= 5.0 * newly_caught
+    # attack/special
+    reward += reward_attack_special("runners", r_action_res, new_c_positions)
+    return reward
+
+def compute_chaser_reward(c_before, newly_caught, c_action_res, new_r_positions):
+    reward = 0.0
+    reward += reward_chasers_distance(c_before, new_r_positions)
+    reward += 5.0 * newly_caught  # +5 per newly caught runner
+    reward += reward_attack_special("chasers", c_action_res, new_r_positions)
+    return reward
+
+# ---------- Main game loop ----------
+def game_tick():
+    global game_running, caught_count
+
+    if not game_running:
+        return
+
+    # record distances
+    r_before = measure_runners_distances()
+    c_before = measure_chasers_distances()
+
+    # Runners action
+    r_old_state, r_action, r_reason, r_qval = choose_action(runners_data, chasers_data)
+    r_results = apply_action(runners_data, r_action)
+
+    # Chasers action
+    c_old_state, c_action, c_reason, c_qval = choose_action(chasers_data, runners_data)
+    c_results = apply_action(chasers_data, c_action)
+
+    # check catches
+    newly_caught = check_catches()
+
+    # new positions
+    r_new_positions = get_runners_positions()
+    c_new_positions = get_chasers_positions()
+
+    # compute rewards
+    r_rew = compute_runner_reward(r_before, newly_caught, r_results, c_new_positions)
+    c_rew = compute_chaser_reward(c_before, newly_caught, c_results, r_new_positions)
+
+    # Q-update
+    new_state = get_state(runners_data, chasers_data)
+    update_q(runners_data["Q"], r_old_state, r_action, r_rew, new_state)
+    update_q(chasers_data["Q"], c_old_state, c_action, c_rew, new_state)
+
+    # draw scene
+    draw_scene()
+
+    # show strategy
+    def action_str(ac):
+        i0, i1 = ac
+        return f"U0={SINGLE_MOVES[i0][2]}, U1={SINGLE_MOVES[i1][2]}"
+    if r_qval is None:
+        runnerStrategyLbl.text = f"{r_reason}, {action_str(r_action)}"
+    else:
+        runnerStrategyLbl.text = f"{r_reason}, {action_str(r_action)} => Q={round(r_qval,2)}"
+    if c_qval is None:
+        chaserStrategyLbl.text = f"{c_reason}, {action_str(c_action)}"
+    else:
+        chaserStrategyLbl.text = f"{c_reason}, {action_str(c_action)} => Q={round(c_qval,2)}"
+
+    # if both runners caught => chasers win
+    if caught_count>=2:
+        end_game("Chasers caught all runners!", winner="chasers")
+
+def timer_tick():
+    global time_left
+    if not game_running:
+        return
+    time_left -= 1
+    timeLeftVal.text = str(time_left)
+    if time_left<=0:
+        end_game("Time's up – Runners survive!", winner="runners")
+
+def draw_scene():
+    ctx.fillStyle = "#2b2b2b"
+    ctx.fillRect(0, 0, BOARD_W, BOARD_H)
+
+    # grid
+    ctx.strokeStyle = "#555"
+    for i in range(GRID_SIZE+1):
+        ctx.beginPath()
+        ctx.moveTo(i*CELL_SIZE, 0)
+        ctx.lineTo(i*CELL_SIZE, BOARD_H)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(0, i*CELL_SIZE)
+        ctx.lineTo(BOARD_W, i*CELL_SIZE)
+        ctx.stroke()
+
+    # Runners
+    for r in runners_data["units"]:
+        if r["caught"]:
+            ctx.fillStyle = "gray"
+        else:
+            ctx.fillStyle = "blue"
+        x = r["col"]*CELL_SIZE + CELL_SIZE/2
+        y = r["row"]*CELL_SIZE + CELL_SIZE/2
+        ctx.beginPath()
+        ctx.arc(x, y, 20, 0, 2*math.pi)
+        ctx.fill()
+
+    # Chasers
+    ctx.fillStyle = "red"
+    for c in chasers_data["units"]:
+        x = c["col"]*CELL_SIZE + CELL_SIZE/2
+        y = c["row"]*CELL_SIZE + CELL_SIZE/2
+        ctx.beginPath()
+        ctx.arc(x, y, 20, 0, 2*math.pi)
+        ctx.fill()
+
+def start_game(ev=None):
+    global time_left, caught_count, game_running
+    global game_interval_id, timer_interval_id, restart_timeout_id
+
+    # cancel any pending restart
+    if restart_timeout_id is not None:
+        timer.clear_timeout(restart_timeout_id)
+
+    time_left = TOTAL_TIME
+    timeLeftVal.text = str(time_left)
+    caught_count = 0
+    runnersCaughtVal.text = "0"
+    gameStatusText.text   = "Game in progress..."
+    runnerStrategyLbl.text= "Action: –"
+    chaserStrategyLbl.text= "Action: –"
+
+    # reset positions
+    runners_data["units"][0] = {"row":0, "col":0, "caught":False}
+    runners_data["units"][1] = {"row":0, "col":1, "caught":False}
+    chasers_data["units"][0] = {"row":GRID_SIZE-1, "col":GRID_SIZE-1}
+    chasers_data["units"][1] = {"row":GRID_SIZE-1, "col":GRID_SIZE-2}
+
+    game_running = True
+    draw_scene()
+
+    # intervals
+    game_interval_id  = timer.set_interval(game_tick,  500)
+    timer_interval_id = timer.set_interval(timer_tick, 1000)
+
+def stop_game(ev=None):
+    end_game("Manually stopped!", winner=None)
+
+runners_wins = 0
+chasers_wins = 0
+
+def end_game(message, winner=None):
+    global game_running, game_interval_id, timer_interval_id, restart_timeout_id
+    global episode_count, runners_wins, chasers_wins
+
+    game_running = False
+    gameStatusText.text = message
+    if game_interval_id is not None:
+        timer.clear_interval(game_interval_id)
+    if timer_interval_id is not None:
+        timer.clear_interval(timer_interval_id)
+
+    # Count the winner
+    if winner=="runners":
+        runners_wins += 1
+    elif winner=="chasers":
+        chasers_wins += 1
+
+    # Calculate win-rate
+    total_episodes = episode_count
+    if total_episodes<=0:
+        rate = 0.0
+    else:
+        rate = (runners_wins/total_episodes)*100.0
+
+    runnersWinsVal.text       = str(runners_wins)
+    chasersWinsVal.text       = str(chasers_wins)
+    runnersWinRateVal.text    = str(round(rate,1))
+
+    # Update chart
+    addEpisodeWinRate(episode_count, rate)
+
+    # Save Q-tables to localStorage
+    save_all_q_tables()
+
+    # Auto next episode?
+    if AUTO_RESTART and winner is not None:
+        episode_count += 1
+        episodeCountVal.text = str(episode_count)
+        def do_restart():
+            start_game()
+        restart_timeout_id = timer.set_timeout(do_restart, EPISODE_DELAY_MS)
+
+# ----------------------------------------------------
+# Initial load: retrieve Q-tables from localStorage
+# ----------------------------------------------------
+load_all_q_tables()
+
+# Draw an initial scene
+draw_scene()
+
+BTN_START.bind("click", start_game)
+BTN_STOP.bind("click",  stop_game)
+
+  </script>
+
+  <!-- Chart.js Setup (pure JS) -->
+  <script>
+    const ctxChart = document.getElementById('winRateChart').getContext('2d');
+
+    const chartData = {
+      labels: [],
+      datasets: [{
+        label: 'Runners Win-Rate (%)',
+        data: [],
+        borderColor: 'rgba(75,192,192,1)',
+        backgroundColor: 'rgba(75,192,192,0.2)',
+        tension: 0.1
+      }]
+    };
+
+    const chartOptions = {
+      scales: {
+        x: {
+          title: { display: true, text: 'Episode' }
+        },
+        y: {
+          min: 0,
+          max: 100,
+          title: { display: true, text: 'Runners Win-Rate (%)' }
+        }
+      }
+    };
+
+    const winRateChart = new Chart(ctxChart, {
+      type: 'line',
+      data: chartData,
+      options: chartOptions
+    });
+
+    function addEpisodeWinRate(episode, winRate) {
+      winRateChart.data.labels.push(episode);
+      winRateChart.data.datasets[0].data.push(winRate);
+      winRateChart.update();
+    }
+
+    // Expose to Brython
+    window.winRateChart = winRateChart;
+    window.addEpisodeWinRate = addEpisodeWinRate;
+  </script>
+
+</body>
+</html>
