@@ -72,7 +72,4 @@ Feel free to open issues or pull requests to improve the AI logic, add new featu
 
 ---
 
-## License
-
-(Choose a license that best fits your needs. For example, MIT License:)
 
